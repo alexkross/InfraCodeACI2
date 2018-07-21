@@ -1,0 +1,5 @@
+--- # Alternative file name: svr-batch.yml
+- import_playbook: vw-imp.yml
+- import_playbook: atm-early.yml
+  when: intent == 'present' # confition may be ommited safely
+- import_playbook: atm-{{ intent }}.yml

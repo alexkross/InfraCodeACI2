@@ -1,0 +1,56 @@
+---
+- hosts: apic
+  #strategy: debug
+  vars:
+    vrf: VRF1 # Single per tennant. Alternative: per application profile (AP).
+  tasks:
+    - aci_tenant: &tn
+        tenant: '{{ tnn }}'
+        state: '{{ intent }}'
+        output_level: '{{ output_level | default("normal") }}'
+      args: '{{ aci_vars }}'
+      ignore_errors: '{{ intent == "absent" }}'
+    - meta: end_play
+      when: intent == 'absent'
+    - aci_ap:
+        <<: *tn
+        ap: '{{ item.key }}'
+      args: '{{ aci_vars }}'
+      with_dict: '{{ aps }}'
+    - aci_vrf:
+        <<: *tn
+        vrf: '{{ vrf }}'
+      args: '{{ aci_vars }}'
+    - tempfile:
+        state: directory
+        suffix: -l2e_{{ tnn }}
+      register: tmp # Note: tempfile does not support --check mode, hence following will fail w\ tmp.path.
+    - include_tasks: epg.yml
+      vars:
+        l2e: '{ {% for i in oitem.value -%}
+            "{{ i }}": {{ l2es[ oitem.value[ i ].encap ] }}{%- if not loop.last -%}, {% endif -%}
+          {%- endfor %} }'
+        dom: '[ {% for i in oitem.value -%}
+            { "epg": "{{ i }}",
+              "enc": "{{ oitem.value[ i ].encap }}",
+              "doms": {{ oitem.value[ i ].dom }} }{%- if not loop.last -%}, {% endif -%}
+          {%- endfor %} ]'
+      with_dict: '{{ aps }}'
+      loop_control:
+        loop_var: oitem
+    - aci_rest:
+        output_level: '{{ output_level | default("normal") }}'
+        path: /api/node/mo/uni/tn-{{ tnn }}.json
+        method: post
+        #content: |- <JSON in multiline> fails with:
+        # ..., "msg":"APIC Error 400: incomplete node at line '1'", "response": "HTTP Error 400: Bad Request", "status": 400, ... (TBD)
+        # Would be great, bsc allows to get rid of templates/ and files/ altogether. Downside - harder to debug.
+        src: '{{ item }}'
+      args: '{{ aci_vars }}'
+      with_fileglob: '{{ tmp.path }}/*'
+      notify:
+        - clean # check, then clean manually if the task failed
+  handlers:
+    - name: clean
+      command: rm -rf {{ tmp.path }}
+      #warn: false # (only if command_warnings in cfg) bcs file: path=reg.path state=absent does not rmdir, contrary to the module doc

@@ -1,0 +1,63 @@
+---
+before_script:
+  - date +%Y-%m-%dT%H-%M-%S
+after_script:
+  - date +%H-%M-%S
+stages:
+  #- Check preconditions, i.e. resource usage. (TBD)
+  - cln_tst_pre # Remove and simplify alike tst1 after manual run removed on cln_tst_post. (TBD)
+  - mk_tst
+  - tst1
+  - tst2
+  - cln_tst_post
+  - cln_prd
+  - mk_prd
+.common1: &common1
+  retry: 0
+  tags:
+    - ansible
+cln_tst1_pre:
+  <<: *common1
+  stage: cln_tst_pre
+  script:
+    - ansible-playbook -f 1 vw.yml -e "tn=DMZ1 ap=MsEc epg=CAS intent=absent" -e @vars/tst.yml
+    - ansible-playbook -f 1 tn.yml -e "tn=DMZ1 intent=absent" -e @vars/tst.yml
+mk_tst1_tn:
+  <<: *common1
+  stage: mk_tst
+  script:
+    - ansible-playbook -f 1 tn.yml -e "tn=DMZ1 intent=present" -e @vars/tst.yml
+    - ansible-playbook -f 1 vw.yml -e "tn=DMZ1 ap=MsEc epg=CAS intent=present" -e @vars/tst.yml
+tst1:
+  <<: *common1
+  stage: tst1
+  script:
+    - ansible-playbook -f 1 atm.yml -e "intent=present" -e @vars/tst.yml
+    - ansible-playbook -f 1 tst.yml -e dev=epg0 -e "{'ips':['192.168.0.126','10.76.6.125','10.76.6.1']}" -e @vars/tst.yml
+    - ansible-playbook -f 1 atm.yml -e "intent=absent" -e @vars/tst.yml
+tst2:
+  <<: *common1
+  stage: tst2
+  script:
+    - ansible-playbook -f 1 atm.yml -e "intent=present" -e @vars/tst.yml
+    - ansible-playbook -f 1 tst.yml -e dev=legacy0 -e "{'ips':['192.168.0.1','10.76.6.125','10.76.6.126']}" -e @vars/tst.yml
+    - ansible-playbook -f 1 atm.yml -e "intent=absent" -e @vars/tst.yml
+cln_tst1_post:
+  <<: *common1
+  stage: cln_tst_post
+  script:
+    - ansible-playbook -f 1 vw.yml -e "tn=DMZ1 ap=MsEc epg=CAS intent=absent" -e @vars/tst.yml
+    - ansible-playbook -f 1 tn.yml -e "tn=DMZ1 intent=absent" -e @vars/tst.yml
+  when: manual # non-blocking
+cln_prd1:
+  <<: *common1
+  stage: cln_prd
+  script:
+    - ansible-playbook -f 1 tn.yml -e "tn=DMZ1 intent=absent" -e @vars/prd.yml
+  when: manual
+  allow_failure: false # blocking
+mk_prd1_tn:
+  <<: *common1
+  stage: mk_prd
+  script:
+    - ansible-playbook -f 1 tn.yml -e "tn=DMZ1 intent=present" -e @vars/prd.yml

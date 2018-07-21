@@ -1,0 +1,54 @@
+--- # TBD: idempotency with creates, etc
+- hosts: Acme1ACI2
+  vars:
+    ints: '{{ tst.ints[1:] }}' # or directly on tst.ints with "when: item.device != 'eth0'" # Do NOT touch management eth0!
+    func:
+      epg0: client
+      legacy0: server
+    port: 5201
+  tasks:
+    - name: Force kill all containers #, but leaving volumes if any
+      shell: docker container rm -f $(docker container ls --all -q)
+      ignore_errors: true
+    - command: ip -br l
+      register: reg
+    - set_fact:
+        devs: '{{ reg.stdout_lines | map("regex_replace", "^(\w+)\s+(?:UP|DOWN|UNKNOWN)\s+([0-9A-Fa-f:]{17})\b.*$", "\1 \2") | list }}'
+    - name: Prep interfaces # set down and name with MAC to dev mapping
+      shell: | # cannot loop over block of commands, so shell
+        ip l set {{ dev.0 }} down
+        # Does not work for interface in down state: ip l set {{ dev.0 }} mtu 9000
+        ip l set {{ dev.0 }} name {{ item.device }} up # w\ 'up' UNKNOWN state may happens in docker container
+      args:
+        creates: /sys/class/net/{{ item.device }} # TBD: ensure that an interface is in down state
+      vars:
+        dev: '{{ (devs | map("regex_search", "^.*\b" ~ item.mac ~ "$") | reject("none") | first).split() }}'
+      with_list: '{{ ints }}'
+    - name: Start containers
+      #docker_container:
+      #module fails due to Py 3.6 to 2.7 (target) source (/usr/lib/python2.7/site-packages/docker/api/container.py, line 157, in create_host_config) discepancy: "... create_host_config() got an unexpected keyword argument 'init'".
+      vars:
+        name: iperf-{{ func[ item ] }}
+        auto_remove: yes
+        image: docker.io/networkstatic/iperf3:latest
+        entrypoint: /bin/bash
+        interactive : yes
+        tty: yes
+        network_mode: none
+        purge_networks: yes
+        volumes: /var/tmp:/mnt/host
+        restart: yes # or recreate if not enough (w/ or w\ force_kill and/or keep_volumes)
+        restart_policy: always # using default zero restart_retries
+      command: docker run --name {{ name }} --rm --network {{ network_mode }} -v {{ volumes }} --entrypoint {{ entrypoint }} -itd {{ image }}
+      register: reg_conts # for docker_container dict if module is used
+      with_list: '{{ ints | map(attribute="device") | list }}'
+    - name: Inject networks
+      command: pipework --direct-phys {{ item.device }} iperf-{{ func[ item.device ] }} {{ item.address }}/{{ item.netmask | ipaddr('prefix') }}@{{ item.gateway }} # empty routes if @... missed
+      register: reg_nets
+      with_list: '{{ ints }}'
+    - name: Start IPerf server # might be merged with this container creation (unsure, depends on interface visibility)
+      command: docker exec iperf-server iperf3 --{{ func[ "legacy0" ] }} -p {{ port }} -u -D
+      async: 3600 # On 0 (zero) playbooks seems to hangs, but next task looks started (!?!)
+      poll: 0
+    - name: Run IPerf test 1
+      command: docker exec iperf-client iperf3 --{{ func[ "epg0" ] }} {{ (ints | selectattr("device", "eq", "legacy0") | first).address }} -p {{ port }} -b 80M -t 30 -i 10 -u #-P 10 -N

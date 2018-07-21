@@ -1,0 +1,50 @@
+---
+- hosts: Acme1ACI2
+  force_handlers: true
+  vars:
+    dev: legacy0
+    ints: '{{ tst.ints[1:] | selectattr("device", "eq", dev ) | first }}'
+  tasks:
+    - name: Disable cloud-init service in easy way
+      copy: # touch idempotently
+        content: ""
+        dest: /etc/cloud/cloud-init.disabled
+        force: no
+        group: cloud
+        owner: root
+        mode: 0644
+    - block:
+        - command: ip a add {{ ints.address }}/{{ ints.netmask }} dev {{ dev }}
+        - command: ip l set {{ dev }} up
+        - command: ip r add default via 192.168.0.1
+      notify: clean and down dev
+    - blockinfile: # or lineinfile for single line:
+        path: /etc/resolv.conf
+        block: |-
+          nameserver 192.168.254.10
+          nameserver 192.168.254.11
+    - lineinfile:
+        path: /etc/ostree/remotes.d/centos-atomic-host.conf
+        line: proxy={{ proxyenv.http_proxy }}
+    - atomic_host:
+        revision: latest
+      #environment: '{{ proxyenv }}' does not seem to be used
+    - lineinfile:
+        path: /etc/sysconfig/docker
+        line: HTTPS_PROXY={{ proxyenv.http_proxy }}
+      notify: restart docker
+    - docker_image:
+        name: networkstatic/iperf3
+    - copy:
+        src: pipework/pipework
+        dest: /usr/local/bin
+        mode: preserve
+  handlers:
+    - name: clean and down dev
+      - shell: |-
+          ip a flush {{ dev }}
+          ip l set {{ dev }} down
+    - name: restart docker
+      service:
+        name: docker
+        state: restarted

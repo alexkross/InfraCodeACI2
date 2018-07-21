@@ -1,0 +1,35 @@
+---
+output_level: debug
+pref: Tst
+l2es:
+  vlan-13: # EPG's encap
+    dom: L2o1 # shared, no need for aep: L2o1_acme1, etc
+    paths:
+      - pod-1/protpaths-101-102/pathep-[L2o1_acme1_VPC]
+    ip: 192.168.0.125 # Just for tests, may be null/undefined. Get mask from EPG/BD.
+doms:
+  Vw2:
+    typ: vmm
+    dom: ACI_Vw2
+tst:
+  ints: # TBD: use Random Mac Address Filter
+    - device: eth0 # mg
+      mac: 00:50:56:49:4d:09
+      # Do NOT add bootproto to preserve from inadvertent modification by interfaces role.
+    - device: legacy0
+      bootproto: static
+      mac: 00:50:56:49:ce:10
+      mtu: 9000
+      address: 192.168.0.123
+      netmask: 255.255.255.128
+      #gateway: 192.168.0.1
+      gateway: 192.168.0.125
+      dnsnameservers: 192.168.254.10 10.76.2.10 10.76.0.11 10.76.2.11
+      dnssearch: acme.com 
+    - device: epg0
+      bootproto: static
+      mac: 00:50:56:49:a1:55
+      mtu: 9000
+      address: 192.168.0.124
+      netmask: 255.255.255.128
+      gateway: 192.168.0.126

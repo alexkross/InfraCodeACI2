@@ -1,0 +1,81 @@
+---
+- aci_bd:
+    <<: &tn-ol
+      tenant: '{{ tnn }}'
+      output_level: '{{ output_level | default("normal") }}'
+    bd: &bd
+      '{{ oitem.key }}_{{ item.key }}'
+    vrf: '{{ vrf }}'
+    arp_flooding: yes
+    l2_unknown_unicast: flood
+  args: '{{ aci_vars }}'
+  with_dict: '{{ oitem.value }}'
+- aci_bd_subnet:
+    <<: *tn-ol
+    bd: *bd
+    gateway: '{{ item.value.gw }}'
+    mask: '{{ item.value.msk }}'
+    scope: private # Or random error about NoneType is not iterable will come (module BUG)!
+  args: '{{ aci_vars }}'
+  with_dict: '{{ oitem.value }}'
+- aci_epg:
+    <<: *tn-ol
+    ap: &ap
+      '{{ oitem.key }}'
+    bd: *bd
+    epg: &epg
+      '{{ item.key }}'
+  args: '{{ aci_vars }}'
+  with_dict: '{{ oitem.value }}'
+- aci_epg_to_domain:
+    <<: *tn-ol
+    ap: *ap
+    epg: '{{ item.0.epg }}'
+    domain: '{{ d.dom }}'
+    domain_type: '{{ d.typ | default("vmm") }}'
+    vm_provider: '{{ d.prov | default("vmware") }}'
+    resolution_immediacy: pre-provision # lazy by default
+  vars:
+    d: '{{ doms[ item.1 ] }}'
+  args: '{{ aci_vars }}'
+  with_subelements:
+    - '{{ dom }}'
+    - doms
+- aci_contract:
+    <<: *tn-ol
+    <<: &bcp
+      contract: *bd
+    scope: tenant
+  args: '{{ aci_vars }}'
+  with_dict: '{{ oitem.value }}'
+- aci_contract_subject:
+    <<: *tn-ol
+    <<: *bcp
+    <<: &sbj
+      subject: All_default
+  args: '{{ aci_vars }}'
+  with_dict: '{{ oitem.value }}'
+- aci_contract_subject_to_filter:
+    <<: *tn-ol
+    <<: *bcp
+    <<: *sbj
+    filter: default
+  args: '{{ aci_vars }}'
+  with_dict: '{{ oitem.value }}'
+- aci_epg_to_contract:
+    <<: *tn-ol
+    ap: *ap
+    epg: *epg
+    contract: *bd
+    contract_type: '{{ item.value.role | default("provider") }}'
+  args: '{{ aci_vars }}'
+  with_dict: '{{ oitem.value }}'
+- template:
+    src: templates/l2e.j2
+    dest: '{{ tmp.path }}/{{ name }}.json'
+  vars:
+    name: '{{ oitem.key }}_{{item.key }}' # must match BD name and contract name
+    epg: '{{ oitem.value[ item.key ] }}'
+    ip: '{{ item.value.ip }}'
+    msk: '{{ epg.msk }}'
+  with_dict: '{{ l2e }}'

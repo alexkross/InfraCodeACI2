@@ -1,0 +1,43 @@
+---
+- hosts:
+    - 1ivcs01test
+  # explicit gathering defined in local configuration, so no need for "gather_facts: false"
+  vars:
+    host: 1iesx01test.acme.com
+  tasks: # TBD: consider moving to import_playbook: '...-{{ intent }}.yml' loosing YAML ref/anchor subst.
+    - vmware_guest:
+        networks:
+          - &mg
+            name: VM Network MG
+            device_type: &dt
+              vmxnet3
+            mac: '{{ tst.ints.0.mac }}'
+            start_connected: yes
+          - &ec
+            name: VM Network MsEc
+            device_type: *dt
+            mac: '{{ tst.ints.1.mac }}'
+            start_connected: yes
+          - name: '{{ tnn }}|{{ ap }}|{{ epg }}' # e.g. TstDMZ1|MsEc|CAS
+            device_type: *dt
+            mac: '{{ tst.ints.2.mac }}'
+            allow_guest_control: yes
+            start_connected: yes
+      args: '{{ args }}'
+      register: reg
+      when: intent == 'present'
+    - vmware_guest: # remove ACI networks from the VM
+        networks:
+          - *mg
+          - *ec
+          - name: quarantine
+            device_type: *dt
+            mac: '{{ tst.ints.2.mac }}'
+            allow_guest_control: no
+            start_connected: no # nevertheless current state remain connected
+        state: present # absent to delete VM
+      args: '{{ args }}'
+      register: reg
+      when: intent == 'absent'
+      ignore_errors: true
+    #- debug: var=reg

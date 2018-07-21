@@ -1,0 +1,10 @@
+---
+- hosts: Acme1ACI2
+  vars:
+    ints: '{{ tst.ints[1:] }}'
+  tasks:
+    - name: Complete clean up for all interfaces except management
+      command: ip -4 addr flush dev '{{ item.device }}'
+      #removes: /sys/class/net/... (TBD) instead of ignore_errors: yes
+      ignore_errors: yes
+      with_list: '{{ ints }}'

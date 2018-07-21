@@ -1,0 +1,14 @@
+---
+proxyenv:
+  http_proxy: http://Donald.Trump:{{ proxypwd }}@192.168.254.150:3128
+  https_proxy: http://Donald.Trump:{{ proxypwd }}@192.168.254.150:3128
+tnn: '{{ pref }}{{ tn }}'
+aps:
+  'MsEc':
+    'CAS':
+      encap: vlan-13 # used also for L2ext lookup
+      dom:
+        - Vw2
+      msk: 25
+      gw: 192.168.0.126
+      tst: [ '1', '2' ] # not used in prd

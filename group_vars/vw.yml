@@ -1,0 +1,12 @@
+args:
+  hostname: '{{ ansible_host }}'
+  username: '{{ ansible_user }}'
+  password: '{{ pwd }}'
+  validate_certs: false
+  datacenter: DBDatacenter
+  esxi_hostname: '{{ host }}'
+  name: Acme1ACI2
+  annotation: modified by Ansible
+  #hardware:
+  #  - TBD
+  force: yes

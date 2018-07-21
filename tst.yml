@@ -1,0 +1,43 @@
+---
+- hosts: Acme1ACI2
+  vars:
+    p: '{{ tst.ints[1:] | selectattr("device", "eq", dev) | first }}'
+  tasks:
+    - name: Set ip address
+      command: ip addr add {{ p.address }}/{{ p.netmask }} dev {{ dev }}
+    - name: Bring interface up
+      command: ip l set {{ dev }} up
+    - name: Set Jumbo MTU
+      command: ip l set {{ dev }} mtu 9000
+    - name: Small ping test
+      command: ping -q -c 3 -A -M do -s 1472 -I {{ dev }} {{ item }}
+      register: reg
+      with_list: '{{ ips }}'
+    - debug: # The very first ping is allowed to fail for ACI fabric.
+        msg: 'Stats:\n{{ reg.results | map(attribute="stdout") | list | to_yaml }}'
+    - name: Big async ping test (except legacy net that is not jumbo frame ready yet)
+      command: ping -W 1 -q -c 1000 -A -M do -s {% if dev == "legacy0" or item == "192.168.0.1" %} 1472 {% else %} 8972 {% endif %} -I {{ dev }} {{ item }}
+      async: 300 # wait max
+      poll: 0 # poll period, 0 to not poll at all
+      register: sleeper
+      with_list: '{{ ips }}'
+    - name: Async ping monitor and reporter
+      async_status: jid={{ item.ansible_job_id }}
+      loop: '{{ sleeper.results }}'
+      register: reg
+      until: reg.finished # module attribute
+      retries: 30 # default 3
+      delay: 10 # default 5
+    - debug:
+        msg: 'Stats:\n{{ reg.results | map(attribute="stdout") | list | to_yaml }}'
+    #- set_stats:
+    #    data: # BUG: does not aggregate properly bcs values remain string type despite convertion to "| int".
+    #      packets_transmitted: '{{ packets.0.split() | first | int }}'
+    #      packets_received: '{{ packets.1.split() | first | int }}'
+    #      #min/avg/max/mdev from rtt does not aggregate. Parse by ... with filters (TBD).
+    #  vars:
+    #    packets: '{{ item.stdout_lines.3.split(", ") }}'
+    #    rtt: '{{ item.stdout_lines.4.split(" = ").1 }}'
+    #  with_list: '{{ reg.results }}'
+    #- debug: var=item # BUG! See more in lookup_subelements.yml
+    #  with_list: '{{ lookup("subelements", reg.results, "stdout", "skip_missing=True") }}'
